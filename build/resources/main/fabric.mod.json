@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "playtime_reminder",
+  "version": "1.0.0",
+  "name": "Playtime Reminder",
+  "description": "Messages players every 30 minutes of session playtime, and insists on a break after 2 hours.",
+  "authors": ["Matt Murphy"],
+  "license": "MIT",
+  "environment": "server",
+  "entrypoints": {
+    "main": ["com.mattmurphy.playtimereminder.PlaytimeReminderMod"]
+  },
+  "depends": {
+    "fabricloader": ">=0.17.3",
+    "minecraft": "1.21.10",
+    "fabric-api": ">=0.110.0"
+  }
+}
