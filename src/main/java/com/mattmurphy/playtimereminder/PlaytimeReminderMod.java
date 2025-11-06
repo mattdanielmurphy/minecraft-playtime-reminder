@@ -94,15 +94,15 @@ public final class PlaytimeReminderMod implements ModInitializer {
 				long secondsUntilKick = ticksUntilKick / 20;
 
 				if (secondsUntilKick <= 300 && !warned5min.getOrDefault(id, false)) {
-					player.sendSystemMessage(Component.literal("You will be kicked in 5 minutes to remind you to take a break."));
+					player.sendSystemMessage(Component.literal(config.warningMessage5min));
 					warned5min.put(id, true);
 				}
 				if (secondsUntilKick <= 60 && !warned1min.getOrDefault(id, false)) {
-					player.sendSystemMessage(Component.literal("You will be kicked in 1 minute."));
+					player.sendSystemMessage(Component.literal(config.warningMessage1min));
 					warned1min.put(id, true);
 				}
 				if (secondsUntilKick <= 10 && !warned10s.getOrDefault(id, false)) {
-					player.sendSystemMessage(Component.literal("You will be kicked in 10 seconds."));
+					player.sendSystemMessage(Component.literal(config.warningMessage10s));
 					warned10s.put(id, true);
 				}
 
@@ -161,5 +161,8 @@ public final class PlaytimeReminderMod implements ModInitializer {
 		String strongMessagePrefix = "You've been playing for ";
 		String strongMessageSuffix = " minutes this session. Please take a break now.";
 		String disconnectMessage = "Break reminder: Please take a short break and rejoin when ready.";
+		String warningMessage5min = "You will be kicked in 5 minutes to remind you to take a break.";
+		String warningMessage1min = "You will be kicked in 1 minute.";
+		String warningMessage10s = "You will be kicked in 10 seconds.";
 	}
 }
