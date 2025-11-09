@@ -1,10 +1,10 @@
 plugins {
 	id 'java'
-	id 'fabric-loom' version '1.9-SNAPSHOT'
+	id 'fabric-loom' version '1.13.3'
 }
 
 group = 'com.mattmurphy'
-version = '1.0.0'
+version = project.mod_version
 
 java {
 	toolchain {
@@ -18,29 +18,40 @@ repositories {
 	maven { url = 'https://maven.fabricmc.net/' }
 }
 
-loom {
-}
-
 dependencies {
 	minecraft "com.mojang:minecraft:1.21.10"
 	mappings loom.officialMojangMappings()
 	modImplementation "net.fabricmc:fabric-loader:0.17.3"
-	modImplementation "net.fabricmc.fabric-api:fabric-api:0.110.5+1.21.4"
+	modImplementation "net.fabricmc.fabric-api:fabric-api:0.138.0+1.21.10"
 }
 
 tasks.withType(JavaCompile).configureEach {
 	options.release = 21
 }
 
-processResources {
-	inputs.property "version", project.version
-	filesMatching("fabric.mod.json") {
-		expand project.properties
-	}
+tasks.named("sourcesJar") {
+    enabled = false
 }
+
+tasks.named("remapSourcesJar") {
+    enabled = false
+}
+
+configurations.archives.artifacts.clear()
+artifacts {
+    archives jar
+}
+
+
 
 jar {
 	from("LICENSE") {
 		rename { String fileName -> "${fileName}_playtime-reminder" }
+	}
+}
+
+processResources {
+	filesMatching('fabric.mod.json') {
+		expand 'mod_version': project.mod_version
 	}
 }

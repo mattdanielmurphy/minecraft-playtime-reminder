@@ -8,6 +8,11 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.network.chat.Component;
 import net.minecraft.ChatFormatting;
+import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
+import com.mojang.brigadier.arguments.BoolArgumentType;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.commands.Commands;
 
 import java.io.IOException;
 import java.io.Reader;
@@ -42,7 +47,32 @@ public final class PlaytimeReminderMod implements ModInitializer {
 	    @Override
 	    public void onInitialize() {
 	        ServerLifecycleEvents.SERVER_STARTING.register(server -> loadConfig());
-	
+
+	        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
+	            dispatcher.register(Commands.literal("playtime")
+	                .requires(source -> source.hasPermission(2)) // Requires op level 2
+	                .then(Commands.literal("set")
+	                    .then(Commands.literal("reminderIntervalMinutes")
+	                        .then(Commands.argument("minutes", IntegerArgumentType.integer(1))
+	                            .executes(context -> setIntConfig(context.getSource(), "reminderIntervalMinutes", IntegerArgumentType.getInteger(context, "minutes")))))
+	                    .then(Commands.literal("strongReminderThresholdMinutes")
+	                        .then(Commands.argument("minutes", IntegerArgumentType.integer(1))
+	                            .executes(context -> setIntConfig(context.getSource(), "strongReminderThresholdMinutes", IntegerArgumentType.getInteger(context, "minutes")))))
+	                    .then(Commands.literal("strongReminderRepeatMinutes")
+	                        .then(Commands.argument("minutes", IntegerArgumentType.integer(1))
+	                            .executes(context -> setIntConfig(context.getSource(), "strongReminderRepeatMinutes", IntegerArgumentType.getInteger(context, "minutes")))))
+	                    .then(Commands.literal("breakDurationMinutes")
+	                        .then(Commands.argument("minutes", IntegerArgumentType.integer(1))
+	                            .executes(context -> setIntConfig(context.getSource(), "breakDurationMinutes", IntegerArgumentType.getInteger(context, "minutes")))))
+	                    .then(Commands.literal("disconnectOnStrong")
+	                        .then(Commands.argument("value", BoolArgumentType.bool())
+	                            .executes(context -> setBoolConfig(context.getSource(), "disconnectOnStrong", BoolArgumentType.getBool(context, "value")))))
+	                )
+	                .then(Commands.literal("get")
+	                    .executes(context -> getConfig(context.getSource())))
+	            );
+	        });
+
 	        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
 	            ServerPlayer player = handler.getPlayer();
 	            UUID id = player.getUUID();
@@ -257,6 +287,46 @@ public final class PlaytimeReminderMod implements ModInitializer {
 				insistBreak(player, minutesPlayed);
 			}
 	    }
+
+	    private int setIntConfig(CommandSourceStack source, String fieldName, int value) {
+	        try {
+	            java.lang.reflect.Field field = Config.class.getDeclaredField(fieldName);
+	            field.setAccessible(true);
+	            field.set(config, value);
+	            saveConfig();
+	            source.sendSuccess(() -> Component.literal("Set config '" + fieldName + "' to " + value).withStyle(ChatFormatting.GREEN), true);
+	            return 1;
+	        } catch (NoSuchFieldException | IllegalAccessException e) {
+	            source.sendFailure(Component.literal("Failed to set config: " + e.getMessage()));
+	            return 0;
+	        }
+	    }
+
+	    private int setBoolConfig(CommandSourceStack source, String fieldName, boolean value) {
+	        try {
+	            java.lang.reflect.Field field = Config.class.getDeclaredField(fieldName);
+	            field.setAccessible(true);
+	            field.set(config, value);
+	            saveConfig();
+	            source.sendSuccess(() -> Component.literal("Set config '" + fieldName + "' to " + value).withStyle(ChatFormatting.GREEN), true);
+	            return 1;
+	        } catch (NoSuchFieldException | IllegalAccessException e) {
+	            source.sendFailure(Component.literal("Failed to set config: " + e.getMessage()));
+	            return 0;
+	        }
+	    }
+
+	    private int getConfig(CommandSourceStack source) {
+	        source.sendSuccess(() -> Component.literal("--- Playtime Reminder Config ---").withStyle(ChatFormatting.YELLOW), false);
+	        source.sendSuccess(() -> Component.literal("  reminderIntervalMinutes: " + config.reminderIntervalMinutes), false);
+	        source.sendSuccess(() -> Component.literal("  strongReminderThresholdMinutes: " + config.strongReminderThresholdMinutes), false);
+	        source.sendSuccess(() -> Component.literal("  strongReminderRepeatMinutes: " + config.strongReminderRepeatMinutes), false);
+	        source.sendSuccess(() -> Component.literal("  breakDurationMinutes: " + config.breakDurationMinutes), false);
+	        source.sendSuccess(() -> Component.literal("  disconnectOnStrong: " + config.disconnectOnStrong), false);
+	        source.sendSuccess(() -> Component.literal("----------------------------------").withStyle(ChatFormatting.YELLOW), false);
+	        return 1;
+	    }
+
 	private void insistBreak(ServerPlayer player, int minutesPlayed) {
 		player.sendSystemMessage(Component.literal(config.strongMessagePrefix + minutesPlayed + config.strongMessageSuffix));
 		if (!config.disconnectOnStrong) {
@@ -350,18 +420,18 @@ public final class PlaytimeReminderMod implements ModInitializer {
 	}
 
 	public static final class Config {
-		int reminderIntervalMinutes = 30; // default for testing
-		int strongReminderThresholdMinutes = 120;
-		int strongReminderRepeatMinutes = 10;
-		int breakDurationMinutes = 5; // New parameter for break duration
-		boolean disconnectOnStrong = true;
-		String regularMessagePrefix = "You've been playing for ";
-		String regularMessageSuffix = " minutes this session. Consider taking a short break soon.";
-		String strongMessagePrefix = "You've been playing for ";
-		String strongMessageSuffix = " minutes this session. Please take a break now.";
-		String disconnectMessage = "Break reminder: Please take a short break and rejoin when ready.";
-		String warningMessage5min = "You will be kicked in 5 minutes to remind you to take a break.";
-		String warningMessage1min = "You will be kicked in 1 minute.";
-		String warningMessage10s = "You will be kicked in 10 seconds.";
+		public int reminderIntervalMinutes = 30; // default for testing
+		public int strongReminderThresholdMinutes = 120;
+		public int strongReminderRepeatMinutes = 10;
+		public int breakDurationMinutes = 5; // New parameter for break duration
+		public boolean disconnectOnStrong = true;
+		public String regularMessagePrefix = "You've been playing for ";
+		public String regularMessageSuffix = " minutes this session. Consider taking a short break soon.";
+		public String strongMessagePrefix = "You've been playing for ";
+		public String strongMessageSuffix = " minutes this session. Please take a break now.";
+		public String disconnectMessage = "Break reminder: Please take a short break and rejoin when ready.";
+		public String warningMessage5min = "You will be kicked in 5 minutes to remind you to take a break.";
+		public String warningMessage1min = "You will be kicked in 1 minute.";
+		public String warningMessage10s = "You will be kicked in 10 seconds.";
 	}
 }

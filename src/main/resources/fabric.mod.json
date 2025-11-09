@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "id": "playtime_reminder",
-  "version": "${version}",
+  "version": "${mod_version}",
   "name": "Playtime Reminder",
   "description": "Messages players every 30 minutes of session playtime, and insists on a break after 2 hours.",
   "authors": ["Matt Murphy"],
