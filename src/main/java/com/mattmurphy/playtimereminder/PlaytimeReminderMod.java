@@ -8,6 +8,9 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.network.chat.Component;
 import net.minecraft.ChatFormatting;
+import net.minecraft.network.protocol.game.ClientboundSetTitleTextPacket;
+import net.minecraft.network.protocol.game.ClientboundSetSubtitleTextPacket;
+import net.minecraft.network.protocol.game.ClientboundSetTitlesAnimationPacket;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.BoolArgumentType;
@@ -27,6 +30,8 @@ import java.util.UUID;
 import java.util.function.Function;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import net.minecraft.world.BossEvent;
+import net.minecraft.server.level.ServerBossEvent;
 
 public final class PlaytimeReminderMod implements ModInitializer {
 	private static final int TICKS_PER_MINUTE = 20 * 60;
@@ -34,6 +39,7 @@ public final class PlaytimeReminderMod implements ModInitializer {
 	private Config config = new Config();
 
 	    private final Map<UUID, Integer> playerJoinTick = new HashMap<>();
+	    private final Map<UUID, ServerBossEvent> playerBossBar = new HashMap<>(); // Tracks the boss bar for each player
 	    private final Map<UUID, Integer> playerDisconnectTick = new HashMap<>(); // Tracks the tick a player disconnected
 	    private final Map<UUID, Integer> lastReminderMinute = new HashMap<>();
 	    private final Map<UUID, Boolean> warned5min = new HashMap<>();
@@ -190,6 +196,7 @@ public final class PlaytimeReminderMod implements ModInitializer {
 	            int dailyMinutes = playerDailyPlaytime.getOrDefault(id, 0);
 	            if (minutesPlayed > 0 && minutesPlayed > dailyMinutes) {
 	                playerDailyPlaytime.put(id, minutesPlayed);
+	                dailyMinutes = minutesPlayed; // Update the local variable for the message
 	            }
 	            
 	            String dailyPlaytimeMessage = " (Total today: " + dailyMinutes + "m)";
@@ -265,18 +272,61 @@ public final class PlaytimeReminderMod implements ModInitializer {
 	            			long ticksUntilKick = nextKickTick - ticksPlayed;
 	            			long secondsUntilKick = ticksUntilKick / 20;
 	            
+	            			// Boss Bar Logic
+	            			ServerBossEvent bossBar = playerBossBar.get(id);
+	            			
+	            			if (secondsUntilKick <= 300 && secondsUntilKick > 0) {
+	            				float progress = (float)secondsUntilKick / 300.0f;
+	            				int minutesRemaining = (int) (secondsUntilKick / 60);
+	            				int secondsRemaining = (int) (secondsUntilKick % 60);
+	            				
+	            				String titleText = String.format(config.bossBarTitle, String.format("%d:%02d", minutesRemaining, secondsRemaining));
+	            				
+	            				if (bossBar == null) {
+	            					bossBar = new ServerBossEvent(
+	            						Component.literal(titleText), 
+	            						BossEvent.BossBarColor.RED, 
+	            						BossEvent.BossBarOverlay.PROGRESS
+	            					);
+	            					playerBossBar.put(id, bossBar);
+	            					bossBar.addPlayer(player);
+	            				} else {
+	            					bossBar.setName(Component.literal(titleText));
+	            				}
+	            				bossBar.setProgress(progress);
+	            			} else if (bossBar != null) {
+	            				// Remove boss bar if time is up or > 5 minutes away
+	            				bossBar.removePlayer(player);
+	            				playerBossBar.remove(id);
+	            			}
+	            
 	            			// Only send 5-min warning if kick is scheduled for 5 minutes or less, AND more than 1 minute away.
 	            			if (secondsUntilKick <= 300 && secondsUntilKick > 60 && !warned5min.getOrDefault(id, false)) {
 	            				player.sendSystemMessage(Component.literal(config.warningMessage5min + dailyPlaytimeMessage).withStyle(ChatFormatting.RED));
 	            				System.out.println("[PlaytimeReminder] 5-min warning sent to " + player.getName().getString() + " (Playtime: " + minutesPlayed + "m)");
 	            				warned5min.put(id, true);
 	            			}
-	            			if (secondsUntilKick <= 60 && !warned1min.getOrDefault(id, false)) {
+	            			
+	            			// Send 60-sec warning as a big on-screen title/subtitle message.
+	            			// This also serves as the 1-minute system message warning.
+	            			if (secondsUntilKick <= 60 && secondsUntilKick > 10 && !warned1min.getOrDefault(id, false)) {
+	            				// Send Title/Subtitle
+	            				player.connection.send(new ClientboundSetTitlesAnimationPacket(10, 70, 20)); // Fade in: 0.5s, Stay: 3.5s, Fade out: 1s
+	            				player.connection.send(new ClientboundSetTitleTextPacket(Component.literal("BREAK REMINDER").withStyle(ChatFormatting.RED, ChatFormatting.BOLD)));
+	            				player.connection.send(new ClientboundSetSubtitleTextPacket(Component.literal(config.warningMessage1min).withStyle(ChatFormatting.YELLOW)));
+	            				
 	            				player.sendSystemMessage(Component.literal(config.warningMessage1min + dailyPlaytimeMessage).withStyle(ChatFormatting.RED));
 	            				System.out.println("[PlaytimeReminder] 1-min warning sent to " + player.getName().getString() + " (Playtime: " + minutesPlayed + "m)");
 	            				warned1min.put(id, true);
 	            			}
+	            			
+	            			// Send 10-sec warning as a big on-screen title/subtitle message.
 	            			if (secondsUntilKick <= 10 && !warned10s.getOrDefault(id, false)) {
+	            				// Send Title/Subtitle
+	            				player.connection.send(new ClientboundSetTitlesAnimationPacket(10, 70, 20)); // Fade in: 0.5s, Stay: 3.5s, Fade out: 1s
+	            				player.connection.send(new ClientboundSetTitleTextPacket(Component.literal("BREAK REMINDER").withStyle(ChatFormatting.RED, ChatFormatting.BOLD)));
+	            				player.connection.send(new ClientboundSetSubtitleTextPacket(Component.literal(config.warningMessage10s).withStyle(ChatFormatting.YELLOW)));
+	            				
 	            				player.sendSystemMessage(Component.literal(config.warningMessage10s + dailyPlaytimeMessage).withStyle(ChatFormatting.RED));
 	            				System.out.println("[PlaytimeReminder] 10-sec warning sent to " + player.getName().getString() + " (Playtime: " + minutesPlayed + "m)");
 	            				warned10s.put(id, true);
@@ -328,6 +378,12 @@ public final class PlaytimeReminderMod implements ModInitializer {
 	    }
 
 	private void insistBreak(ServerPlayer player, int minutesPlayed) {
+		UUID id = player.getUUID();
+		ServerBossEvent bossBar = playerBossBar.remove(id);
+		if (bossBar != null) {
+			bossBar.removePlayer(player);
+		}
+		
 		player.sendSystemMessage(Component.literal(config.strongMessagePrefix + minutesPlayed + config.strongMessageSuffix));
 		if (!config.disconnectOnStrong) {
 			return;
@@ -406,6 +462,7 @@ public final class PlaytimeReminderMod implements ModInitializer {
 					if (this.config.warningMessage5min == null) this.config.warningMessage5min = defaults.warningMessage5min;
 					if (this.config.warningMessage1min == null) this.config.warningMessage1min = defaults.warningMessage1min;
 					if (this.config.warningMessage10s == null) this.config.warningMessage10s = defaults.warningMessage10s;
+					if (this.config.bossBarTitle == null) this.config.bossBarTitle = defaults.bossBarTitle; // New config
 				}
 			}
 			
@@ -432,6 +489,7 @@ public final class PlaytimeReminderMod implements ModInitializer {
 		public String disconnectMessage = "Break reminder: Please take a short break and rejoin when ready.";
 		public String warningMessage5min = "You will be kicked in 5 minutes to remind you to take a break.";
 		public String warningMessage1min = "You will be kicked in 1 minute.";
-		public String warningMessage10s = "You will be kicked in 10 seconds.";
+		public String warningMessage10s = "[Break Enforcement] You will be kicked in 10s.";
+		public String bossBarTitle = "Break Reminder: %s remaining"; // New config for boss bar title
 	}
 }
