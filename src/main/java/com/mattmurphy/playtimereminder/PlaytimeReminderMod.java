@@ -52,29 +52,34 @@ public final class PlaytimeReminderMod implements ModInitializer {
 	                long ticksSinceDisconnect = currentServerTick - disconnectTick;
 	                long breakThresholdTicks = (long)config.breakDurationMinutes * TICKS_PER_MINUTE;
 	
-	                if (ticksSinceDisconnect > breakThresholdTicks) {
+	                if (ticksSinceDisconnect >= breakThresholdTicks) {
 	                    // Break taken, reset playtime
 	                    playerJoinTick.put(id, currentServerTick);
 	                } else {
-	                    // Break NOT taken, playtime continues. Schedule warning.
-	                    Integer joinTick = playerJoinTick.get(id);
-	                    if (joinTick != null) {
-	                        long ticksPlayed = currentServerTick - joinTick;
-	                        long nextKickTick = calculateNextKickTick(ticksPlayed);
-	
-	                        long ticksUntilKick = nextKickTick - ticksPlayed;
-	                        // Use ceiling division to round up to the nearest minute
-	                        long minutesUntilKick = (ticksUntilKick + TICKS_PER_MINUTE - 1) / TICKS_PER_MINUTE; 
-	
+	                    // Break NOT taken, playtime continues. 
+	                    // We need to adjust the join tick to account for the time they were away.
+	                    Integer oldJoinTick = playerJoinTick.get(id);
+	                    if (oldJoinTick != null) {
+	                        long ticksPlayed = currentServerTick - oldJoinTick;
+	                        // The new join tick is moved forward by the time they were disconnected.
+	                        // This preserves the session playtime but accounts for the break.
+	                        int newJoinTick = (int) (currentServerTick - (ticksPlayed - ticksSinceDisconnect));
+	                        playerJoinTick.put(id, newJoinTick);
+
+	                        // Now, schedule a warning based on the adjusted playtime.
+	                        long adjustedTicksPlayed = currentServerTick - newJoinTick;
+	                        long nextKickTick = calculateNextKickTick(adjustedTicksPlayed);
+	                        long ticksUntilKick = nextKickTick - adjustedTicksPlayed;
+	                        long minutesUntilKick = (ticksUntilKick + TICKS_PER_MINUTE - 1) / TICKS_PER_MINUTE;
+
 	                        if (minutesUntilKick > 0) {
 	                            String message = "Your break was less than " + config.breakDurationMinutes + " minutes. Your playtime continues. You will be kicked in approximately " + minutesUntilKick + " minutes.";
-	                            // Store message for delayed sending
 	                            delayedJoinMessages.put(id, message);
 	                        }
 	                    }
 	                }
 	            } else {
-	                // First join, reset playtime
+	                // First join, record playtime
 	                playerJoinTick.put(id, currentServerTick);
 	            }
 	
@@ -137,6 +142,8 @@ public final class PlaytimeReminderMod implements ModInitializer {
 	            }
 	        }
 	
+			java.util.List<ServerPlayer> playersToKick = new java.util.ArrayList<>();
+
 	        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
 	            UUID id = player.getUUID();
 	            Integer joinTick = playerJoinTick.get(id);
@@ -198,7 +205,7 @@ public final class PlaytimeReminderMod implements ModInitializer {
 	
 	                // Check if we are exactly on a kick tick (threshold or a multiple of repeat interval after threshold)
 	                if (ticksOverThreshold >= 0 && ticksOverThreshold % strongReminderRepeatTicks == 0) {
-	                    insistBreak(player, minutesPlayed);
+						playersToKick.add(player);
 	                    System.out.println("[PlaytimeReminder] KICKED " + player.getName().getString() + " (Playtime: " + minutesPlayed + "m) - Kick time reached.");
 	
 	                    // Reset for next interval
@@ -244,6 +251,11 @@ public final class PlaytimeReminderMod implements ModInitializer {
 	            				System.out.println("[PlaytimeReminder] 10-sec warning sent to " + player.getName().getString() + " (Playtime: " + minutesPlayed + "m)");
 	            				warned10s.put(id, true);
 	            			}	        }
+			for (ServerPlayer player : playersToKick) {
+				int ticksPlayed = currentServerTick - playerJoinTick.get(player.getUUID());
+				int minutesPlayed = Math.max(0, ticksPlayed / TICKS_PER_MINUTE);
+				insistBreak(player, minutesPlayed);
+			}
 	    }
 	private void insistBreak(ServerPlayer player, int minutesPlayed) {
 		player.sendSystemMessage(Component.literal(config.strongMessagePrefix + minutesPlayed + config.strongMessageSuffix));
@@ -337,7 +349,7 @@ public final class PlaytimeReminderMod implements ModInitializer {
 		}
 	}
 
-	private static final class Config {
+	public static final class Config {
 		int reminderIntervalMinutes = 30; // default for testing
 		int strongReminderThresholdMinutes = 120;
 		int strongReminderRepeatMinutes = 10;
