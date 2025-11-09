@@ -38,21 +38,24 @@ public final class PlaytimeReminderMod implements ModInitializer {
 
 	private Config config = new Config();
 
-	    private final Map<UUID, Integer> playerJoinTick = new HashMap<>();
+	    private final Map<UUID, Long> playerJoinTick = new HashMap<>();
 	    private final Map<UUID, ServerBossEvent> playerBossBar = new HashMap<>(); // Tracks the boss bar for each player
-	    private final Map<UUID, Integer> playerDisconnectTick = new HashMap<>(); // Tracks the tick a player disconnected
+	    private final Map<UUID, Long> playerDisconnectTick = new HashMap<>(); // Tracks the tick a player disconnected
 	    private final Map<UUID, Integer> lastReminderMinute = new HashMap<>();
 	    private final Map<UUID, Boolean> warned5min = new HashMap<>();
 	    private final Map<UUID, Boolean> warned1min = new HashMap<>();
 	    private final Map<UUID, Boolean> warned10s = new HashMap<>();
 	    private final Map<UUID, Integer> playerDailyPlaytime = new HashMap<>(); // Total minutes played today
 	    private final Map<UUID, String> delayedJoinMessages = new HashMap<>(); // Messages to send after a short delay
-	    private int currentServerTick = 0;
+	    private long currentServerTick = 0;
 	    private int lastDayOfMonth = -1;
 	
 	    @Override
 	    public void onInitialize() {
-	        ServerLifecycleEvents.SERVER_STARTING.register(server -> loadConfig());
+	        ServerLifecycleEvents.SERVER_STARTING.register(server -> {
+				loadConfig();
+				clearPlayerState();
+			});
 
 	        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
 	            dispatcher.register(Commands.literal("playtime")
@@ -82,7 +85,7 @@ public final class PlaytimeReminderMod implements ModInitializer {
 	        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
 	            ServerPlayer player = handler.getPlayer();
 	            UUID id = player.getUUID();
-	            Integer disconnectTick = playerDisconnectTick.remove(id);
+	            Long disconnectTick = playerDisconnectTick.remove(id);
 	
 	            if (disconnectTick != null) {
 	                long ticksSinceDisconnect = currentServerTick - disconnectTick;
@@ -94,12 +97,12 @@ public final class PlaytimeReminderMod implements ModInitializer {
 	                } else {
 	                    // Break NOT taken, playtime continues. 
 	                    // We need to adjust the join tick to account for the time they were away.
-	                    Integer oldJoinTick = playerJoinTick.get(id);
+	                    Long oldJoinTick = playerJoinTick.get(id);
 	                    if (oldJoinTick != null) {
 	                        long ticksPlayed = currentServerTick - oldJoinTick;
 	                        // The new join tick is moved forward by the time they were disconnected.
 	                        // This preserves the session playtime but accounts for the break.
-	                        int newJoinTick = (int) (currentServerTick - (ticksPlayed - ticksSinceDisconnect));
+	                        long newJoinTick = currentServerTick - (ticksPlayed - ticksSinceDisconnect);
 	                        playerJoinTick.put(id, newJoinTick);
 
 	                        // Now, schedule a warning based on the adjusted playtime.
@@ -138,6 +141,20 @@ public final class PlaytimeReminderMod implements ModInitializer {
 	        ServerTickEvents.START_SERVER_TICK.register(this::onServerTick);
 	    }
 	
+	    private void clearPlayerState() {
+	        playerJoinTick.clear();
+	        playerBossBar.clear();
+	        playerDisconnectTick.clear();
+	        lastReminderMinute.clear();
+	        warned5min.clear();
+	        warned1min.clear();
+	        warned10s.clear();
+	        playerDailyPlaytime.clear();
+	        delayedJoinMessages.clear();
+	        currentServerTick = 0;
+	        lastDayOfMonth = -1;
+	    }
+
 	    private long calculateNextKickTick(long ticksPlayed) {
 	        long strongReminderThresholdTicks = (long)config.strongReminderThresholdMinutes * TICKS_PER_MINUTE;
 	        long strongReminderRepeatTicks = (long)config.strongReminderRepeatMinutes * TICKS_PER_MINUTE;
@@ -183,14 +200,14 @@ public final class PlaytimeReminderMod implements ModInitializer {
 	        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
 	            UUID id = player.getUUID();
 	            boolean isDelayedMessagePending = delayedJoinMessages.containsKey(id);
-	            Integer joinTick = playerJoinTick.get(id);
+	            Long joinTick = playerJoinTick.get(id);
 	            if (joinTick == null) {
 	                joinTick = currentServerTick; // fallback if missed join event
 	                playerJoinTick.put(id, joinTick);
 	            }
 	
-	            int ticksPlayed = currentServerTick - joinTick;
-	            int minutesPlayed = Math.max(0, ticksPlayed / TICKS_PER_MINUTE);
+	            long ticksPlayed = currentServerTick - joinTick;
+	            int minutesPlayed = Math.max(0, (int) (ticksPlayed / TICKS_PER_MINUTE));
 	            int lastMinute = lastReminderMinute.getOrDefault(id, -1);
 	            
 	            // Update daily playtime
@@ -333,8 +350,8 @@ public final class PlaytimeReminderMod implements ModInitializer {
 	            				warned10s.put(id, true);
 	            			}	        }
 			for (ServerPlayer player : playersToKick) {
-				int ticksPlayed = currentServerTick - playerJoinTick.get(player.getUUID());
-				int minutesPlayed = Math.max(0, ticksPlayed / TICKS_PER_MINUTE);
+				long ticksPlayed = currentServerTick - playerJoinTick.get(player.getUUID());
+				int minutesPlayed = Math.max(0, (int) (ticksPlayed / TICKS_PER_MINUTE));
 				insistBreak(player, minutesPlayed);
 			}
 	    }
