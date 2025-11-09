@@ -182,6 +182,7 @@ public final class PlaytimeReminderMod implements ModInitializer {
 
 	        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
 	            UUID id = player.getUUID();
+	            boolean isDelayedMessagePending = delayedJoinMessages.containsKey(id);
 	            Integer joinTick = playerJoinTick.get(id);
 	            if (joinTick == null) {
 	                joinTick = currentServerTick; // fallback if missed join event
@@ -301,7 +302,7 @@ public final class PlaytimeReminderMod implements ModInitializer {
 	            			}
 	            
 	            			// Only send 5-min warning if kick is scheduled for 5 minutes or less, AND more than 1 minute away.
-	            			if (secondsUntilKick <= 300 && secondsUntilKick > 60 && !warned5min.getOrDefault(id, false)) {
+	            			if (!isDelayedMessagePending && secondsUntilKick <= 300 && secondsUntilKick > 60 && !warned5min.getOrDefault(id, false)) {
 	            				player.sendSystemMessage(Component.literal(config.warningMessage5min + dailyPlaytimeMessage).withStyle(ChatFormatting.RED));
 	            				System.out.println("[PlaytimeReminder] 5-min warning sent to " + player.getName().getString() + " (Playtime: " + minutesPlayed + "m)");
 	            				warned5min.put(id, true);
@@ -309,7 +310,7 @@ public final class PlaytimeReminderMod implements ModInitializer {
 	            			
 	            			// Send 60-sec warning as a big on-screen title/subtitle message.
 	            			// This also serves as the 1-minute system message warning.
-	            			if (secondsUntilKick <= 60 && secondsUntilKick > 10 && !warned1min.getOrDefault(id, false)) {
+	            			if (!isDelayedMessagePending && secondsUntilKick <= 60 && secondsUntilKick > 10 && !warned1min.getOrDefault(id, false)) {
 	            				// Send Title/Subtitle
 	            				player.connection.send(new ClientboundSetTitlesAnimationPacket(10, 70, 20)); // Fade in: 0.5s, Stay: 3.5s, Fade out: 1s
 	            				player.connection.send(new ClientboundSetTitleTextPacket(Component.literal("BREAK REMINDER").withStyle(ChatFormatting.RED, ChatFormatting.BOLD)));
@@ -321,7 +322,7 @@ public final class PlaytimeReminderMod implements ModInitializer {
 	            			}
 	            			
 	            			// Send 10-sec warning as a big on-screen title/subtitle message.
-	            			if (secondsUntilKick <= 10 && !warned10s.getOrDefault(id, false)) {
+	            			if (!isDelayedMessagePending && secondsUntilKick <= 10 && !warned10s.getOrDefault(id, false)) {
 	            				// Send Title/Subtitle
 	            				player.connection.send(new ClientboundSetTitlesAnimationPacket(10, 70, 20)); // Fade in: 0.5s, Stay: 3.5s, Fade out: 1s
 	            				player.connection.send(new ClientboundSetTitleTextPacket(Component.literal("BREAK REMINDER").withStyle(ChatFormatting.RED, ChatFormatting.BOLD)));
