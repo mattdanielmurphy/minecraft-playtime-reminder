@@ -40,7 +40,8 @@ public final class PlaytimeReminderMod implements ModInitializer {
 
 	    private final Map<UUID, Long> playerJoinTick = new HashMap<>();
 	    private final Map<UUID, ServerBossEvent> playerBossBar = new HashMap<>(); // Tracks the boss bar for each player
-	    private final Map<UUID, Long> playerDisconnectTick = new HashMap<>(); // Tracks the tick a player disconnected
+	        private final Map<UUID, Long> playerDisconnectTime = new HashMap<>(); // Tracks the time a player disconnected in milliseconds
+	    private final Map<UUID, Long> playerPlaytimeTicks = new HashMap<>(); // Ticks played in the session before last disconnect
 	    private final Map<UUID, Integer> lastReminderMinute = new HashMap<>();
 	    private final Map<UUID, Boolean> warned5min = new HashMap<>();
 	    private final Map<UUID, Boolean> warned1min = new HashMap<>();
@@ -85,36 +86,37 @@ public final class PlaytimeReminderMod implements ModInitializer {
 	        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
 	            ServerPlayer player = handler.getPlayer();
 	            UUID id = player.getUUID();
-	            Long disconnectTick = playerDisconnectTick.remove(id);
+	            Long disconnectTime = playerDisconnectTime.remove(id);
 	
-	            if (disconnectTick != null) {
-	                long ticksSinceDisconnect = currentServerTick - disconnectTick;
-	                long breakThresholdTicks = (long)config.breakDurationMinutes * TICKS_PER_MINUTE;
+	            if (disconnectTime != null) {
+	                long breakMillis = System.currentTimeMillis() - disconnectTime;
+	                long breakThresholdMillis = (long)config.breakDurationMinutes * 60 * 1000;
 	
-	                if (ticksSinceDisconnect >= breakThresholdTicks) {
+	                if (breakMillis >= breakThresholdMillis) {
 	                    // Break taken, reset playtime
 	                    playerJoinTick.put(id, currentServerTick);
+	                    playerPlaytimeTicks.remove(id);
 	                } else {
-	                    // Break NOT taken, playtime continues. 
-	                    // We need to adjust the join tick to account for the time they were away.
-	                    Long oldJoinTick = playerJoinTick.get(id);
-	                    if (oldJoinTick != null) {
-	                        long ticksPlayed = currentServerTick - oldJoinTick;
-	                        // The new join tick is moved forward by the time they were disconnected.
-	                        // This preserves the session playtime but accounts for the break.
-	                        long newJoinTick = currentServerTick - (ticksPlayed - ticksSinceDisconnect);
+	                    // Break NOT taken, playtime continues.
+	                    // Restore the player's session playtime from before they disconnected.
+	                    Long previousTicksPlayed = playerPlaytimeTicks.remove(id);
+	                    if (previousTicksPlayed != null) {
+	                        // To restore playtime, calculate a new join tick that preserves the played time.
+	                        long newJoinTick = currentServerTick - previousTicksPlayed;
 	                        playerJoinTick.put(id, newJoinTick);
 
-	                        // Now, schedule a warning based on the adjusted playtime.
-	                        long adjustedTicksPlayed = currentServerTick - newJoinTick;
-	                        long nextKickTick = calculateNextKickTick(adjustedTicksPlayed);
-	                        long ticksUntilKick = nextKickTick - adjustedTicksPlayed;
+	                        // Now, schedule a warning based on the restored playtime.
+	                        long nextKickTick = calculateNextKickTick(previousTicksPlayed);
+	                        long ticksUntilKick = nextKickTick - previousTicksPlayed;
 	                        long minutesUntilKick = (ticksUntilKick + TICKS_PER_MINUTE - 1) / TICKS_PER_MINUTE;
 
 	                        if (minutesUntilKick > 0) {
 	                            String message = "Your break was less than " + config.breakDurationMinutes + " minutes. Your playtime continues. You will be kicked in approximately " + minutesUntilKick + " minutes.";
 	                            delayedJoinMessages.put(id, message);
 	                        }
+	                    } else {
+	                        // Fallback if playtime wasn't tracked, start fresh
+	                        playerJoinTick.put(id, currentServerTick);
 	                    }
 	                }
 	            } else {
@@ -130,7 +132,16 @@ public final class PlaytimeReminderMod implements ModInitializer {
 	
 	        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
 	            UUID id = handler.getPlayer().getUUID();
-	            playerDisconnectTick.put(id, currentServerTick); // Store disconnect time
+	            
+	            // Store session playtime to be restored if break is not taken
+	            Long joinTick = playerJoinTick.get(id);
+	            if (joinTick != null) {
+	                long ticksPlayed = currentServerTick - joinTick;
+	                playerPlaytimeTicks.put(id, ticksPlayed);
+	            }
+
+	            playerDisconnectTime.put(id, System.currentTimeMillis()); // Store disconnect time in milliseconds
+	            
 	            // Do NOT remove playerJoinTick, so we can check it on rejoin
 	            lastReminderMinute.remove(id);
 	            warned5min.remove(id);
@@ -150,7 +161,8 @@ public final class PlaytimeReminderMod implements ModInitializer {
 	    private void clearPlayerState() {
 	        playerJoinTick.clear();
 	        playerBossBar.clear();
-	        playerDisconnectTick.clear();
+	        playerDisconnectTime.clear();
+	        playerPlaytimeTicks.clear();
 	        lastReminderMinute.clear();
 	        warned5min.clear();
 	        warned1min.clear();
