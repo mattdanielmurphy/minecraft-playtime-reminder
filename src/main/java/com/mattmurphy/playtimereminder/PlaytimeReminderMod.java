@@ -136,6 +136,12 @@ public final class PlaytimeReminderMod implements ModInitializer {
 	            warned5min.remove(id);
 	            warned1min.remove(id);
 	            warned10s.remove(id);
+	            
+	            // Remove boss bar on disconnect to ensure it is recreated and re-added on rejoin
+	            ServerBossEvent bossBar = playerBossBar.remove(id);
+	            if (bossBar != null) {
+	                bossBar.removePlayer(handler.getPlayer());
+	            }
 	        });
 	
 	        ServerTickEvents.START_SERVER_TICK.register(this::onServerTick);
@@ -289,7 +295,10 @@ public final class PlaytimeReminderMod implements ModInitializer {
 	
 	            			long ticksUntilKick = nextKickTick - ticksPlayed;
 	            			long secondsUntilKick = ticksUntilKick / 20;
-	            
+
+	            			// Check if player has just joined (less than 3 seconds)
+	            			boolean isNewlyJoined = ticksPlayed < (20 * 3); // 60 ticks
+	            			
 	            			// Boss Bar Logic
 	            			ServerBossEvent bossBar = playerBossBar.get(id);
 	            			
@@ -310,6 +319,10 @@ public final class PlaytimeReminderMod implements ModInitializer {
 	            					bossBar.addPlayer(player);
 	            				} else {
 	            					bossBar.setName(Component.literal(titleText));
+	            					// Re-add player to boss bar for a few ticks after joining to ensure the packet is sent
+	            					if (isNewlyJoined) {
+	            						bossBar.addPlayer(player);
+	            					}
 	            				}
 	            				bossBar.setProgress(progress);
 	            			} else if (bossBar != null) {
